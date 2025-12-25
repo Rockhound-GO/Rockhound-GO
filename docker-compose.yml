@@ -1,0 +1,54 @@
+version: '3.8'
+
+services:
+  # PostGIS Database Service
+  postgis:
+    image: postgis/postgis:15-3.3
+    container_name: rockhound_postgis
+    environment:
+      POSTGRES_USER: rockhound
+      POSTGRES_PASSWORD: rockhound_password
+      POSTGRES_DB: rockhound_db
+      PGDATA: /var/lib/postgresql/data/pgdata
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgis_data:/var/lib/postgresql/data
+      - ./init-db:/docker-entrypoint-initdb.d
+    networks:
+      - rockhound_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U rockhound -d rockhound_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # FastAPI Backend Service
+  fastapi:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: rockhound_fastapi
+    environment:
+      DATABASE_URL: postgresql://rockhound:rockhound_password@postgis:5432/rockhound_db
+      ENVIRONMENT: development
+    ports:
+      - "8000:8000"
+    volumes:
+      - .:/app
+    networks:
+      - rockhound_network
+    depends_on:
+      postgis:
+        condition: service_healthy
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+    restart: unless-stopped
+
+volumes:
+  postgis_data:
+    driver: local
+
+networks:
+  rockhound_network:
+    driver: bridge
